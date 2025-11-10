@@ -36,8 +36,7 @@ This repository contains the code and workflow used in the study:
 
 ```
 THIS REPO
-├── analyses/
-│   └── 00_GenTestGP2_clean.Rmd
+├── GenTestGP2_clean.Rmd
 ├── LICENSE
 └── README.md
 ```
