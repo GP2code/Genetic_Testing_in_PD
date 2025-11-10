@@ -7,15 +7,15 @@
 </div>
 
 
-`GP2 ❤️ Open Science 😍`
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![DOI](https://zenodo.org/badge/nnnnn.svg)](https://doi.org/nnnn/zenodo.nnnnn)
+`GP2 ❤️ Open Science 😍`  
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17567723.svg)](https://doi.org/10.5281/zenodo.17567723)
 
 **Last Updated:** November 2025
 
 ## Summary
-This repository contains the code and workflow used in the study:
+This repository contains the code used in the study:
 **“How many do we miss? - Evaluation of age at onset and family history as selection criteria for genetic testing in Parkinson‘s disease”.**
 
 ## Data Statement
@@ -31,8 +31,8 @@ This repository contains the code and workflow used in the study:
     - [Other GP2 Manuscripts (PubMed)](https://pubmed.ncbi.nlm.nih.gov/?term=%22global+parkinson%27s+genetics+program%22)
 
 ## Repository Orientation
-* The `analyses/` directory includes the .Rmd script discussed in the manuscript.
-* Data extraction from the GP2 was performed using notebooks described previously in the code accompanying "Exploring the Global Landscape of Rare Causal and Common High-Risk Variants in Parkinson’s Disease" manuscript (https://github.com/GP2code/GP2-global-genetic-variant-landscape). 
+* The main code includes the .Rmd script discussed in the manuscript.
+* Data extraction from the GP2 was performed using notebooks described previously in the code accompanying **"Exploring the Global Landscape of Rare Causal and Common High-Risk Variants in Parkinson’s Disease" manuscript** (https://github.com/GP2code/GP2-global-genetic-variant-landscape). 
 
 ```
 THIS REPO
