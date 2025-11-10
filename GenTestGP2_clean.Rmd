@@ -1,0 +1,431 @@
+---
+title: "Genetic Test in GP2"
+author: "Inke K&ouml;nig"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+par(mai=c(1.02, 0.82, 0.21, 0.42)) 
+```
+
+## Data entry and preprocessing
+
+The data is given as an excel file "GP2_AOO_project.xlsx" in the folder "projects" and includes per row one PD patient carrying a mutation (variable "Group") or not ("Group"=IPD). Individuals with missing values for age at onset (numeric variable "aao") were excluded. Family history is coded as a factor with 1 (yes) and 0 (no) in variable "famhx_coded".
+
+Variables for every single mutation are created and frequencies of the mutations computed.
+
+```{r libraries, include=FALSE}
+library(readxl)
+library(pROC)
+library(knitr) # for kable
+library(gdata) # for rename
+library(DescTools)
+library(openxlsx)
+```
+
+```{r data entry and manipulation, echo=FALSE, include=FALSE}
+data.GP2 <- read_excel("~/projects/GP2_AOO_project.xlsx", skip=0, col_names=TRUE)
+
+data.GP2$carrier <- factor(grepl("^IPD$", data.GP2$Group), labels = 1:0)
+data.GP2$carrier <- relevel(data.GP2$carrier, ref = "0")
+
+data.GP2$gba <- data.GP2$Group=="IPD" | data.GP2$Group=="GBA"
+
+data.GP2$lrrk <- data.GP2$Group=="IPD" | data.GP2$Group=="LRRK2"
+
+data.GP2$recessive <- data.GP2$Group=="IPD" | data.GP2$Group=="PRKN" | data.GP2$Group=="PINK1" | data.GP2$Group=="PARK7"
+
+data.GP2$other.new <- data.GP2$Group=="IPD" | data.GP2$Group=="SNCA" | data.GP2$Group=="VPS35"
+
+data.GP2$mutation <- data.GP2$Group != "IPD"
+
+Freq_carrier <- sum(data.GP2$carrier=="1", na.rm = TRUE)/nrow(data.GP2)
+
+Freq_gba <- sum(data.GP2$gba & data.GP2$carrier=="1")/nrow(data.GP2)
+
+Freq_lrrk <- sum(data.GP2$lrrk & data.GP2$carrier=="1")/nrow(data.GP2)
+
+Freq_recessive <- sum(data.GP2$recessive & data.GP2$carrier=="1")/nrow(data.GP2)
+
+Freq_other <- sum(data.GP2$other.new & data.GP2$carrier==1)/nrow(data.GP2)
+```
+
+We define the following groups: 
+
+* Carriers of any mutation (either GBA, PRKN, PINK1, LRRK2, PARK7, SNCA, or VPS35)
+* Carriers of no mutation (iPD)
+* Carriers of LRRK2
+* Carriers of GBA
+* Carriers of recessive mutations (either PRKN, PINK1, or PARK7)
+* Carriers of other mutations (either SNCA or VP35).
+
+## Data description
+
+We first describe the relevant variables univariately.
+```{r descriptives, echo=FALSE}
+print("Summary of AAO")
+summary(data.GP2$aao)
+
+print("Summary of AAO in mutation carriers")
+a <-subset(data.GP2, carrier==1)
+summary(a$aao)
+
+print("Summary of AAO in iPD")
+a <-subset(data.GP2, carrier==0)
+summary(a$aao)
+
+print("Summary of AAO in LRRK2")
+a <-subset(data.GP2, carrier==1 & lrrk)
+summary(a$aao)
+
+print("Summary of AAO in GBA")
+a <-subset(data.GP2, carrier==1 & gba)
+summary(a$aao)
+
+print("Summary of AAO in recessive mutations")
+a <-subset(data.GP2, carrier==1 & recessive)
+summary(a$aao)
+
+print("Summary of AAO in other mutations")
+a <-subset(data.GP2, carrier==1 & other.new)
+summary(a$aao)
+
+print("Frequency of different genes including iPD")
+PercTable(data.GP2$Group, digits=1)
+
+print("Frequency of different genes without iPD")
+PercTable(data.GP2$Group[data.GP2$mutation], digits=1)
+
+print("Frequency of mutation carriers (1) and iPD (0)")
+PercTable(data.GP2$carrier, digits=1)
+
+print("Frequency of family history (1) and no family history (0)")
+PercTable(data.GP2$famhx_coded, digits=1)
+```
+
+## GP2: Classification of carriers in entire data
+
+The main question is whether mutation carriers (any mutation) can correctly be distinguished from non mutation carriers based on AAO. In this, the aim is a high sensitivity (identification of carriers) at an acceptable specificity. Possibly, other variables may be relevant including sex and family history.
+
+```{r plots 1, echo=FALSE, fig.width = 7, fig.height = 4}
+par(mai=c(0.62, 0.82, 0.21, 0.21)) # set so that upper margin is smaller; default is mai=c(1.02, 0.82, 0.82, 0.42) for c(bottom, left, top, right) 
+boxplot(aao ~ carrier, names=c("iPD", "Mutation carriers"), data=data.GP2, ylab="AAO")
+boxplot(aao ~ famhx_coded, data=data.GP2,
+        names=c("No", "Yes"), ylab="AAO by family history")
+```
+
+```{r classification simple, echo=FALSE, include=FALSE}
+roc.aao <- roc(data.GP2$carrier, data.GP2$aao, ci=TRUE)
+
+roc.aao.table <- data.frame(roc.aao$thresholds, roc.aao$sensitivities, roc.aao$specificities)
+colnames(roc.aao.table) <- c("AAO", "Sens", "Spec")
+```
+
+```{r classification simple display, echo=FALSE, fig.width = 7, fig.height = 5}
+plot(roc.aao, print.auc=TRUE)
+print(roc.aao.table)
+
+```
+
+In the simple classification based only on AAO, the area under the curve is shown to be better than chance.
+
+```{r regression, echo=FALSE, fig.width = 7, fig.height = 5}
+summary(glm(aao ~ famhx_coded, data=data.GP2))
+
+data.famhx <- subset(data.GP2, is.na(famhx_coded) ==FALSE)
+m.famhx <- glm(aao ~ famhx_coded, data=data.famhx)
+summary(m.famhx)
+data.famhx$residuals <- residuals(m.famhx)
+```
+
+AAO is also relevantly predicted by a positive family history. Therefore, classification of carrier status is also performed using the residual of AAO after removing family history.
+
+```{r classification complex, echo=FALSE, fig.width = 7, fig.height = 5}
+table(data.GP2$carrier, data.GP2$famhx_coded)
+prop.table(table(data.GP2$carrier, data.GP2$famhx_coded, dnn=c("Carrier", "FamHx")), 1)
+
+mosaicplot(carrier ~ famhx_coded, main="", data = data.GP2)
+roc.aaoMINfamhx <- roc(data.famhx$carrier, data.famhx$residuals, ci=TRUE)
+roc.aaoMINfamhx$auc
+roc.aaoMINfamhx$ci
+plot(roc.aaoMINfamhx, print.auc=TRUE)
+
+```
+After removing the effect of family history on AAO, the area under the curve is still better than chance.
+
+
+## GP2: Classification of carrier status based on AAO and family history simultaneously
+
+```{r regression add, echo=FALSE, fig.width = 7, fig.height = 5}
+m.aao <- (glm(carrier~ aao + famhx_coded, family=binomial, data=data.famhx))
+data.famhx$predictors.m <- m.aao$linear.predictors
+```
+
+A further classification of carrier status is performed using AAO as well as family history.
+
+```{r classification complex 2, echo=FALSE, fig.width = 7, fig.height = 5}
+roc.aaoPfamhx <- roc(data.famhx$carrier, data.famhx$predictors.m, ci=TRUE)
+roc.aaoPfamhx$auc
+roc.aaoPfamhx$ci
+plot(roc.aaoPfamhx, print.auc=TRUE)
+
+```
+When classifying carrier status based on both family history and AAO, the area under the curve is better than before. However, the weights are derived in the same sample as the classification sample, and therefore the classification performance is estimated optimistically. Therefore, these results need to be validated in an external sample
+
+
+## GP2: Classification of carriers of recessive mutations in entire data
+
+The same analyses are applied to carriers of Parkin, PINK1 or PARK7 mutations only. Again, the aim is a high sensitivity (identification of carriers) at an acceptable specificity. Possibly, other variables may be relevant including ethnicity, sex and family history.
+
+```{r plots recessive 1, echo=FALSE, fig.width = 7, fig.height = 4}
+par(mai=c(0.62, 0.82, 0.21, 0.21)) # set so that upper margin is smaller; default is mai=c(1.02, 0.82, 0.82, 0.42) for c(bottom, left, top, right)
+boxplot(aao ~ carrier, data=data.GP2, subset = recessive,
+        names=c("iPD", "Recessive mutation carriers"), ylab="AAO")
+
+```
+
+```{r classification simple recessive, echo=FALSE, display=FALSE}
+roc.aao.recessive <- with(subset(data.GP2, recessive),
+                          roc(carrier, aao, ci=TRUE))
+
+roc.aao.table.recessive <- data.frame(roc.aao.recessive$thresholds, roc.aao.recessive$sensitivities, roc.aao.recessive$specificities)
+colnames(roc.aao.table.recessive) <- c("AAO", "Sens", "Spec")
+```
+
+
+```{r classification simple recessive display, echo=FALSE, fig.width = 7, fig.height = 5}
+plot(roc.aao.recessive, print.auc=TRUE)
+print(roc.aao.table.recessive)
+
+```
+
+In the simple classification based only on AAO, the area under the curve is shown to be better than chance.
+
+```{r regression recessive, echo=FALSE, fig.width = 7, fig.height = 5}
+summary(glm(aao ~ famhx_coded, data=data.GP2, subset = recessive))
+
+data.famhx <- subset(data.GP2, is.na(famhx_coded) ==FALSE & recessive)
+m.famhx <- glm(aao ~ famhx_coded, data=data.GP2, subset = recessive)
+summary(m.famhx)
+data.famhx$residuals <- residuals(m.famhx)
+```
+
+AAO is also relevantly predicted by a positive family history. Therefore, classification of mutation status is also performed using the residual of AAO after removing family history.
+
+```{r classification complex recessive, echo=FALSE, fig.width = 7, fig.height = 5}
+with(subset(data.GP2, recessive),
+     table(carrier, famhx_coded))
+with(subset(data.GP2, recessive),
+     prop.table(table(carrier, famhx_coded, dnn=c("Carrier", "FamHx")), 1))
+
+mosaicplot(carrier ~ famhx_coded, main="", data = data.GP2, subset = recessive)
+roc.aaoMINfamhx <- roc(data.famhx$carrier, data.famhx$residuals, ci=TRUE)
+roc.aaoMINfamhx$auc
+roc.aaoMINfamhx$ci
+plot(roc.aaoMINfamhx, print.auc=TRUE)
+
+```
+After removing the effect of family history on AAO, the area under the curve is still better than chance.
+
+## GP2: Classification of carriers of recessive mutations based on AAO and family history simultaneously
+
+```{r regression add recessive, echo=FALSE, fig.width = 7, fig.height = 5}
+m.aao <- (glm(carrier~ aao + famhx_coded, family=binomial, data=data.famhx))
+data.famhx$predictors.m <- m.aao$linear.predictors
+```
+
+A further classification of carrier status is performed using the weighted AAO as well as family history.
+
+```{r classification complex recessive 2, echo=FALSE, fig.width = 7, fig.height = 5}
+roc.aaoPfamhx.recessive <- roc(data.famhx$carrier, data.famhx$predictors.m, ci=TRUE)
+roc.aaoPfamhx.recessive$auc
+roc.aaoPfamhx.recessive$ci
+plot(roc.aaoPfamhx.recessive, print.auc=TRUE)
+
+```
+When classifying carriage of recessive mutations based on both family history and AAO, the area under the curve does not change. However, the weights are derived in the same sample as the classification sample, and therefore the classification performance is estimated optimistically. Therefore, these results need to be validated in an external sample.
+
+## GP2: Classification of GBA carriers in entire data
+
+The same analyses are applied to carriers of GBA only. Again, the aim is a high sensitivity (identification of carriers) at an acceptable specificity. Possibly, other variables may be relevant including ethnicity, sex and family history.
+
+```{r plots g 1, echo=FALSE, fig.width = 7, fig.height = 4}
+par(mai=c(0.62, 0.82, 0.21, 0.21)) # set so that upper margin is smaller; default is mai=c(1.02, 0.82, 0.82, 0.42) for c(bottom, left, top, right)
+boxplot(aao ~ carrier, data=data.GP2, subset = gba,
+        names=c("iPD", "GBA"), ylab="AAO")
+
+```
+
+```{r classification simple g, echo=FALSE, display=FALSE}
+roc.aao.gba <- with(subset(data.GP2, gba), 
+                    roc(carrier, aao, ci=TRUE))
+
+roc.aao.table.g <- data.frame(roc.aao.gba$thresholds, roc.aao.gba$sensitivities, roc.aao.gba$specificities)
+colnames(roc.aao.table.g) <- c("AAO", "Sens", "Spec")
+```
+
+```{r classification simple g display, echo=FALSE, fig.width = 7, fig.height = 5}
+plot(roc.aao.gba, print.auc=TRUE)
+print(roc.aao.table.g)
+```
+
+In the simple classification based only on AAO, the area under the curve is slightly better than chance.
+
+```{r regression g, echo=FALSE, fig.width = 7, fig.height = 5}
+summary(glm(aao ~ famhx_coded, data=data.GP2, subset=gba))
+
+data.famhx <- subset(data.GP2, is.na(famhx_coded) ==FALSE & gba)
+m.famhx <- glm(aao ~ famhx_coded, data=data.famhx)
+summary(m.famhx)
+data.famhx$residuals <- residuals(m.famhx)
+```
+
+AAO is also relevantly predicted by a positive family history. Therefore, classification of GBA status is also performed using the residual of AAO after removing family history.
+
+```{r classification complex g, echo=FALSE, fig.width = 7, fig.height = 5}
+with(subset(data.GP2, gba),
+     table(carrier, famhx_coded))
+with(subset(data.GP2, gba),
+     prop.table(table(carrier, famhx_coded, dnn=c("GBA", "FamHx")), 1))
+
+mosaicplot(carrier ~ famhx_coded, main="", data = data.GP2, subset = gba)
+roc.aaoMINfamhx <- roc(data.famhx$carrier, data.famhx$residuals, ci=TRUE)
+roc.aaoMINfamhx$auc
+roc.aaoMINfamhx$ci
+plot(roc.aaoMINfamhx, print.auc=TRUE)
+
+```
+After removing the effect of family history on AAO, the area under the curve does not change.
+
+## GP2: Classification of GBA status based on AAO and family history simultaneously
+
+```{r regression add g, echo=FALSE, fig.width = 7, fig.height = 5}
+m.aao <- (glm(carrier~ aao + famhx_coded, family=binomial, data=data.famhx))
+data.famhx$predictors.m <- m.aao$linear.predictors
+```
+
+A further classification of carrier status is performed using the weighted AAO as well as family history.
+
+```{r classification complex g 2, echo=FALSE, fig.width = 7, fig.height = 5}
+roc.aaoPfamhx.gba <- roc(data.famhx$carrier, data.famhx$predictors.m, ci=TRUE)
+roc.aaoPfamhx.gba$auc
+roc.aaoPfamhx.gba$ci
+plot(roc.aaoPfamhx.gba, print.auc=TRUE)
+
+```
+When classifying GBA status based on both family history and AAO, the area under the curve is better than before. However, the weights are derived in the same sample as the classification sample, and therefore the classification performance is estimated optimistically. Therefore, these results need to be validated in an external sample.
+
+
+## GP2: Classification of LRRK2 carriers in entire data
+
+The same analyses are applied to carriers of LRRK2 only. Again, the aim is a high sensitivity (identification of carriers) at an acceptable specificity. Possibly, other variables may be relevant including ethnicity, sex and family history.
+
+```{r plots l 1, echo=FALSE, fig.width = 7, fig.height = 4}
+par(mai=c(0.62, 0.82, 0.21, 0.21)) # set so that upper margin is smaller; default is mai=c(1.02, 0.82, 0.82, 0.42) for c(bottom, left, top, right)
+boxplot(aao ~ carrier, data=data.GP2, subset = lrrk,
+        names=c("iPD", "LRRK2"), ylab="AAO")
+
+```
+
+```{r classification simple l, echo=FALSE, display=FALSE}
+roc.aao.lrrk <- with(subset(data.GP2, lrrk),
+                     roc(carrier, aao, ci=TRUE))
+
+roc.aao.table.l <- data.frame(roc.aao.lrrk$thresholds, roc.aao.lrrk$sensitivities, roc.aao.lrrk$specificities)
+colnames(roc.aao.table.l) <- c("AAO", "Sens", "Spec")
+```
+
+```{r classification simple l display, echo=FALSE, fig.width = 7, fig.height = 5}
+plot(roc.aao.lrrk, print.auc=TRUE)
+print(roc.aao.table.l)
+
+```
+
+In the simple classification based only on AAO, the area under the curve is not shown to be better than chance.
+
+```{r regression l, echo=FALSE, fig.width = 7, fig.height = 5}
+summary(glm(aao ~ famhx_coded, data=data.GP2, subset=lrrk))
+
+data.famhx <- subset(data.GP2, is.na(famhx_coded) ==FALSE & lrrk)
+m.famhx <- glm(aao ~ famhx_coded, data=data.famhx)
+summary(m.famhx)
+data.famhx$residuals <- residuals(m.famhx)
+```
+
+AAO is also relevantly predicted by a positive family history. Therefore, classification of LRRK2 status is also performed using the residual of AAO after removing family history.
+
+```{r classification complex l, echo=FALSE, fig.width = 7, fig.height = 5}
+with(subset(data.GP2, lrrk),
+     table(carrier, famhx_coded))
+with(subset(data.GP2, lrrk),
+     prop.table(table(carrier, famhx_coded, dnn=c("LRRK2", "FamHx")), 1))
+
+mosaicplot(carrier ~ famhx_coded, main="", data = data.GP2, subset = lrrk)
+roc.aaoMINfamhx <- roc(data.famhx$carrier, data.famhx$residuals, ci=TRUE)
+roc.aaoMINfamhx$auc
+roc.aaoMINfamhx$ci
+plot(roc.aaoMINfamhx, print.auc=TRUE)
+
+```
+After removing the effect of family history on AAO, the area under the curve is still not better than chance.
+
+## GP2: Classification of LRRK2 status based on AAO and family history simultaneously
+
+```{r regression add l, echo=FALSE, fig.width = 7, fig.height = 5}
+m.aao <- (glm(carrier~ aao + famhx_coded, family=binomial, data=data.famhx))
+data.famhx$predictors.m <- m.aao$linear.predictors
+```
+
+A further classification of carrier status is performed using the weighted AAO as well as family history.
+
+```{r classification complex l 2, echo=FALSE, fig.width = 7, fig.height = 5}
+roc.aaoPfamhx.lrrk <- roc(data.famhx$carrier, data.famhx$predictors.m, ci=TRUE)
+roc.aaoPfamhx.lrrk$auc
+roc.aaoPfamhx.lrrk$ci
+plot(roc.aaoPfamhx.lrrk, print.auc=TRUE)
+
+```
+When classifying LRRK2 status based on both family history and AAO, the area under the curve is better than before. However, the weights are derived in the same sample as the classification sample, and therefore the classification performance is estimated optimistically. Therefore, these results need to be validated in an external sample.
+
+## GP2: Classification of other mutation carriers
+
+The number of carriers of other mutations is too small for further analysis.
+
+## GP2: Comparing sensitivites at different thresholds
+
+The sensitivities are plotted as a function of AAO. These are shown both for the separate groups of mutations and for the entire group. This is valid under the assumption that the respective relative frequencies of mutations in this cohort are representative.
+
+The group of other mutations (either SNCA or VP35) is not included here. 
+
+```{r combination, echo=FALSE, fig.width = 7, fig.height = 5}
+roc.1 <- merge(roc.aao.table.recessive, roc.aao.table.l, all=TRUE, by="AAO", suffixes=c(".r", ".l"), sort=TRUE)
+roc.2 <- merge(roc.aao.table.g, roc.aao.table, all=TRUE, by="AAO", suffixes=c(".g", ".all"), sort=TRUE)
+roc.all <- merge(roc.1, roc.2, all=TRUE, by="AAO", sort=TRUE)
+
+plot(x = roc.all$AAO, y = roc.all$Sens.r, col="blue", type = 'p', xlab="AAO", ylab="Sensitivity")
+  points(x = roc.all$AAO, y = roc.all$Sens.l, col="green")
+  points(x = roc.all$AAO, y = roc.all$Sens.g, col="red")
+  points(x = roc.all$AAO, y = roc.all$Sens.all, col="black")
+  legend("topleft", c("PINK1, Parkin, PARK7", "LRRK2", "GBA", "All"), pch=1, col=c("blue", "green", "red", "black"))
+
+
+```
+It can be seen that sensitivities are generally highest for PINK1, Parkin, PARK7 and lowest for LRRK2 and GBA. Given that LRRK2 and GBA are the most frequent mutations, the sensitivities for the entire group are lower.
+
+## Comparing ROCs for different groups
+
+```{r combination roc, echo=FALSE, fig.width = 7, fig.height = 5}
+plot(roc.aao, col="black")
+plot(roc.aaoPfamhx, add=TRUE, col="black", lty=2)
+plot(roc.aao.recessive, add=TRUE, col="blue")
+plot(roc.aaoPfamhx.recessive, add=TRUE, col="blue", lty=2)
+plot(roc.aao.gba, add=TRUE, col="green")
+plot(roc.aaoPfamhx.gba, add=TRUE, col="green", lty=2)
+plot(roc.aao.lrrk, add=TRUE, col="red")
+plot(roc.aaoPfamhx.lrrk, add=TRUE, col="red", lty=2)
+legend("bottomright", legend=c("All monogenic PD", "Parkin, PINK1 or PARK7 mutation carriers", "GBA mutation carriers", "LRRK2 mutation carriers"), col=c("black", "blue", "green", "red"), lwd=2)
+```
+
